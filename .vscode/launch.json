@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "type": "node-terminal",
+        "name": "Debug - Server & Client",
+        "postDebugTask": "Build Odin"
+      },
+      {
+        "type": "node-terminal",
+        "name": "Debug - Server",
+        "postDebugTask": "SERVER DEBUG"
+      },
+      {
+        "type": "node-terminal",
+        "name": "Debug - Client",
+        "postDebugTask": "CLIENT DEBUG"
+      }
+    ]
+}
