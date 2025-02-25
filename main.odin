@@ -130,6 +130,8 @@ game_context_t :: struct {
     events:  [dynamic]event_t,
     flags:   [dynamic]flag_t,
     delta_time: f64,
+    prev_tick_duration: f64,
+    prev_tick: time.Tick,
 
     multiplayer: multiplayer_game_t,
     assets: asset_context_t
@@ -517,8 +519,6 @@ handle_tcp_msg :: proc(game_context: ^game_context_t, net_context: ^networking_c
     data_in_bytes: [package_size]byte
 
     if net_context.sent_heartbeat  {
-        //fmt.println("Wait for messages")
-        //fmt.println(net_context.socket)
         byte_count ,err := net.recv_tcp(net_context.socket, data_in_bytes[:])
     
         if (byte_count > 0)
@@ -530,9 +530,6 @@ handle_tcp_msg :: proc(game_context: ^game_context_t, net_context: ^networking_c
                 net_context.sent_heartbeat = false
             }
             sync.unlock(net_context.recv_buffer_mutex)
-        }
-        else {
-            //fmt.println("No new messages")
         }
     
         if err != nil {
@@ -552,7 +549,6 @@ handle_tcp_msg :: proc(game_context: ^game_context_t, net_context: ^networking_c
         net.send_tcp(net_context.socket, data_buffer)
         net_context.sent_heartbeat = true
     }
-
 }
 
 
@@ -598,7 +594,6 @@ get_communication_socket :: proc() -> net.TCP_Socket{
 
             break;
         }
-
     }
 
     return socket
@@ -606,16 +601,12 @@ get_communication_socket :: proc() -> net.TCP_Socket{
 
 get_communication_socket_worker :: proc(t: ^thread.Thread) {
     fmt.printf("work of thread  %d started \n", t.user_index)
-
     socket := get_communication_socket()
 
-    // getting values that we passed while initilizing our thread
     dereferenced_value := (cast(^get_socket_worker_data_t)t.data)
     dereferenced_value.out_socket = socket
 
     fmt.printfln("work of thread %d done", t.user_index)
-    // this function just does counter--
-    // which tells that our function has done its work
     sync.wait_group_done(dereferenced_value.wait_group_data)
 }
 
@@ -656,16 +647,14 @@ game_thread_worker :: proc(t: ^thread.Thread) {
 
     for  {
         start_tick := time.tick_now()
-        frame_duration := time.Second / 60
+        target_frame_duration := time.Second / 60
 
         sync.lock(&worker_data.game_data.mutex)
         {
-            worker_data.game_data.ptr.delta_time = time.duration_seconds(frame_duration)
             local_player_info := worker_data.game_data.ptr.multiplayer.local_player
 
-            //fmt.println("main tick")
-            // Handle systems
-            // Server sided code
+            worker_data.game_data.ptr.delta_time = time.duration_seconds(time.tick_since(worker_data.game_data.ptr.prev_tick))
+
             input_system_tick(worker_data.game_data.ptr)
 
             for &player in worker_data.game_data.ptr.players {
@@ -679,13 +668,14 @@ game_thread_worker :: proc(t: ^thread.Thread) {
             }
             
             parse_net_buffer(game_context, net_context)
-            handle_tcp_msg(worker_data.game_data.ptr, worker_data.net_context) 
+            handle_tcp_msg(worker_data.game_data.ptr, worker_data.net_context)
+
+            worker_data.game_data.ptr.prev_tick_duration = time.duration_seconds(time.tick_since(start_tick))
+            worker_data.game_data.ptr.prev_tick          = start_tick
         }
         sync.unlock(&worker_data.game_data.mutex)
-                    
         duration := time.tick_since(start_tick)
-        
-        time.accurate_sleep(frame_duration - duration)
+        time.accurate_sleep(target_frame_duration - duration)
     }
 
     sync.wait_group_done(worker_data.wait_group_data)
