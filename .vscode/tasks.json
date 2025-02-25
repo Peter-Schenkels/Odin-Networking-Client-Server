@@ -1,62 +1,88 @@
 {
-    "version": "2.0.0",
-    "tasks": [
-      {
-        "label": "Build Odin",
-        "dependsOn": [
-            "SERVER DEBUG",
-            "CLIENT DEBUG"
-        ]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Odin",
+      "dependsOn": [
+        "SERVER DEBUG",
+        "CLIENT DEBUG"
+      ]
+    },
+    {
+      "label": "SERVER DEBUG",
+      "type": "shell",
+      "command": "odin.exe",
+      "args": [
+        "run",
+        "${workspaceFolder}",
+        "-define:IS_SERVER=true",
+        "-debug",
+        "-out:build-server/server.exe",
+        "-show-timings",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
       },
-      {
-        "label": "SERVER DEBUG",
-        "type": "shell",
-        "command": "odin.exe",
-        "args": [
-          "run",
-          "${workspaceFolder}",
-          "-define:IS_SERVER=true",
-          "-debug",
-          "-out:build-server/server.exe",
-          "-show-timings",
-        ],
-        "presentation": {
-          "reveal": "always",
-          "panel": "shared",
-          "showReuseMessage": false,
-          "clear": true
-        },
-        "problemMatcher": [],
-        "group": {
-            "kind": "build",
-            "isDefault": true
-        }
-      },
-      {
-        "label": "CLIENT DEBUG",
-        "type": "shell",
-        "command": "odin.exe",
-        "args": [
-          "run",
-          "${workspaceFolder}",
-          "-define:IS_SERVER=false",
-          "-debug",
-          "-out:build/client.exe",
-          "-show-timings",
-        ],
-        "presentation": {
-          "reveal": "always",
-          "panel": "shared",
-          "showReuseMessage": false,
-          "clear": true
-        },
-        "problemMatcher": [],
-        "group": {
-            "kind": "build",
-            "isDefault": true
-        }
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
       }
-
-      
-    ]
-  }
+    },
+    {
+      "label": "CLIENT DEBUG",
+      "type": "shell",
+      "command": "odin.exe",
+      "args": [
+        "run",
+        "${workspaceFolder}",
+        "-define:IS_SERVER=false",
+        "-debug",
+        "-out:build/client.exe",
+        "-show-timings",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": true
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "mkdir",
+      "type": "shell",
+      "command": "cmd",
+      "args": [
+        "/C",
+        "if not exist .\\build mkdir .\\build"
+      ]
+    },
+    {
+      "label": "build client",
+      "type": "shell",
+      "command": "odin build . -debug -out:build/client-debug.exe",
+      "group": "build"
+    },
+    {
+      "label": "build server",
+      "type": "shell",
+      "command": "odin build . -debug -define:IS_SERVER=true -out:build/server-debug.exe",
+      "group": "build"
+    },
+    {
+      "label": "Build",
+      "dependsOn": [
+        "mkdir",
+        "build"
+      ]
+    }
+  ]
+}

@@ -3,18 +3,36 @@
     "configurations": [
       {
         "type": "node-terminal",
-        "name": "Debug - Server & Client",
+        "name": "Run Server & Client",
         "postDebugTask": "Build Odin"
       },
       {
         "type": "node-terminal",
-        "name": "Debug - Server",
+        "name": "Run Server",
         "postDebugTask": "SERVER DEBUG"
       },
       {
         "type": "node-terminal",
-        "name": "Debug - Client",
+        "name": "Run Client",
         "postDebugTask": "CLIENT DEBUG"
+      },
+      {
+          "type": "cppvsdbg",
+          "request": "launch",
+          "preLaunchTask": "build client",
+          "name": "Debug Client",
+          "program": "${workspaceFolder}/build/client-debug.exe",
+          "args": [],
+          "cwd": "${workspaceFolder}"
+      },
+      {
+          "type": "cppvsdbg",
+          "request": "launch",
+          "preLaunchTask": "build server",
+          "name": "Debug Server",
+          "program": "${workspaceFolder}/build/server-debug.exe",
+          "args": [],
+          "cwd": "${workspaceFolder}"
       }
     ]
 }
