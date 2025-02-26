@@ -3,15 +3,19 @@
 package main
 IS_SERVER :: #config(IS_SERVER, false)
 package_size :: 1024
+prediciton_snapshots :: 560
 
 import "core:fmt"
 import "core:net"
 import "core:strings"
 import "core:bytes"
+import "core:slice"
+import "base:intrinsics"
 import "core:thread"
 import "core:sync"
 import "core:time"
 import "core:math/linalg"
+import "core:hash"
 import "vendor:raylib"
 
 drawable_t :: struct {
@@ -129,12 +133,14 @@ game_context_t :: struct {
     players: [dynamic]player_t,
     events:  [dynamic]event_t,
     flags:   [dynamic]flag_t,
+    current_tick: u64,
     delta_time: f64,
     prev_tick_duration: f64,
     prev_tick: time.Tick,
 
     multiplayer: multiplayer_game_t,
-    assets: asset_context_t
+    assets: asset_context_t,
+    predictions: prediction_context_t
 }
 
 asset_context_t :: struct {
@@ -156,7 +162,73 @@ input_data_t :: struct {
     direction : linalg.Vector2f32,
 }
 
+prediction_state_t :: struct {
+    tick : u64,
+    hash : u64
+}
 
+player_prediction_state_t :: struct {
+   snapshots : [prediciton_snapshots]prediction_state_t,
+   snapshot_index : i32,
+}
+
+prediction_context_t :: struct {
+    player_snapshots : [2]player_prediction_state_t
+}
+
+
+decrease_float_precision :: proc(a: f32, bits_lost: u32) -> f32 {
+    return transmute(f32)((transmute(u32)a) >> bits_lost)
+}
+
+get_transform_data_error_margin_hash :: proc(transform: ^transform_t) -> u64 {
+    approx_transform := transform^
+    precision_lost : u32 = 23
+
+    approx_transform.position.x = decrease_float_precision(approx_transform.position.x, precision_lost)
+    approx_transform.position.y = decrease_float_precision(approx_transform.position.y, precision_lost)
+    approx_transform.position.z = decrease_float_precision(approx_transform.position.z, precision_lost)
+
+    return get_data_hash(&approx_transform, size_of(transform_t))
+}
+
+
+should_reconciliate_player :: proc(target_player : int, game_context: ^game_context_t, received_data_hash: u64) -> bool {
+    for &snapshot in game_context.predictions.player_snapshots[target_player].snapshots {
+        if snapshot.hash == received_data_hash {
+            //fmt.println("Prediction Hit")
+            return false
+        }
+    }
+
+    //fmt.println("Predition Miss")
+    return true
+}
+
+get_data_hash :: proc(ptr: rawptr, data_size: int) -> u64 {
+    data := slice.bytes_from_ptr(ptr, data_size)
+    return hash.crc64_ecma_182(data)
+}
+
+add_player_snapshot :: proc(target_player: ^player_t, state : ^player_prediction_state_t, current_tick : u64) {
+    if (state.snapshot_index == prediciton_snapshots) {
+        intrinsics.mem_copy(&state.snapshots[0], &state.snapshots[1], prediciton_snapshots - 1)
+        state.snapshot_index -= 1
+    }
+
+    state.snapshots[state.snapshot_index] = prediction_state_t {
+        tick = current_tick,
+        hash = get_transform_data_error_margin_hash(&target_player.transform)
+    }
+
+    state.snapshot_index += 1
+}
+
+register_predicted_tick :: proc(game_context: ^game_context_t) {
+    for &player in game_context.players {
+        add_player_snapshot(&player, &game_context.predictions.player_snapshots[player.id], game_context.current_tick)
+    }
+}
 
 event_system_tick :: proc(game_context: ^game_context_t) {
     for &event in game_context.events {
@@ -193,6 +265,7 @@ input_system_tick :: proc(game_context: ^game_context_t) {
 
         speed : f32 = 300
         player.transform.position += { player.input.direction.x, player.input.direction.y, 0 } * f32(game_context.delta_time) * speed
+
         index += 1
     }
 }
@@ -465,7 +538,15 @@ parse_net_buffer :: proc (game_context: ^game_context_t, net_context: ^networkin
                     case .transform_data: {
                         if cpy_pck_to_buffer(&parse_buffer, data_ptr, &parser_info, size_of(transform_t)) {
                             data := (^transform_t)(&parse_buffer.buf[0])^
-                            game_context.players[parser_info.entity_id].transform = data
+                            
+                            when !IS_SERVER {
+                                received_state := get_transform_data_error_margin_hash(&data)
+
+                                if (should_reconciliate_player(parser_info.entity_id, game_context, received_state))
+                                {
+                                    game_context.players[parser_info.entity_id].transform = data
+                                }
+                            }
 
                             bytes.buffer_reset(&parse_buffer)
                             parser_info.parse_byte_index = 0
@@ -672,6 +753,10 @@ game_thread_worker :: proc(t: ^thread.Thread) {
 
             worker_data.game_data.ptr.prev_tick_duration = time.duration_seconds(time.tick_since(start_tick))
             worker_data.game_data.ptr.prev_tick          = start_tick
+
+            when !IS_SERVER {
+                register_predicted_tick(game_context)
+            }
         }
         sync.unlock(&worker_data.game_data.mutex)
         duration := time.tick_since(start_tick)
